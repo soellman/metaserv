@@ -71,10 +71,10 @@ func writeEtcd(data string) {
 
 func handleResponse(hosts map[string]interface{}, r *client.Response) map[string]interface{} {
 	if r.Action == "delete" || r.Action == "expire" || r.Action == "compareAndDelete" {
-		debugf("removing host\n")
+		debugf("etcd: removing host\n")
 		delete(hosts, r.Node.Key)
 	} else if r.Action == "set" || r.Action == "update" || r.Action == "create" || r.Action == "compareAndSwap" {
-		debugf("adding host\n")
+		debugf("etcd: adding/updating host\n")
 		var data interface{}
 		if err := json.Unmarshal([]byte(r.Node.Value), &data); err == nil {
 			hosts[r.Node.Key] = data
@@ -91,6 +91,7 @@ func list(m map[string]interface{}) []interface{} {
 	return l
 }
 
+// watcher watches etcd, adds metadata, and sends to the keeper
 func watcher(ctx context.Context, out chan []byte) {
 	key := "/" + etcdKey
 	meta := make(map[string]string)
@@ -126,8 +127,12 @@ func watcher(ctx context.Context, out chan []byte) {
 			}
 			hosts := handleResponse(hosts, r)
 			meta["updated"] = time.Now().UTC().Format(time.RFC3339Nano)
-			j, _ := json.Marshal(map[string]interface{}{"meta": meta, "hosts": list(hosts)})
-			out <- j
+			if j, err := json.Marshal(map[string]interface{}{"meta": meta, "hosts": list(hosts)}); err == nil {
+				debugf("watcher sending data\n")
+				out <- j
+			} else {
+				log.Printf("ERROR: json marshalling failed: %v", err)
+			}
 		}
 	}
 }

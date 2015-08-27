@@ -26,8 +26,10 @@ type Datum struct {
 
 func write(data interface{}) {
 	meta["updated"] = time.Now().UTC().Format(time.RFC3339Nano)
-	if j, err := json.Marshal(map[string]interface{}{"meta": meta, "values": data}); err != nil {
+	if j, err := json.Marshal(map[string]interface{}{"meta": meta, "values": data}); err == nil {
 		writeEtcd(string(j))
+	} else {
+		log.Printf("ERROR: json marshalling failed: %v", err)
 	}
 }
 
@@ -80,8 +82,9 @@ func aggregator(ctx context.Context, in chan Datum, out chan interface{}) {
 			debugf("aggregator cancelled\n")
 			return
 		case d := <-in:
-			debugf("aggregator received %v\n", d.key)
+			debugf("aggregator received data from %q\n", d.key)
 			data[d.key] = d.value
+			debugf("aggregator sending data\n")
 			out <- data
 		}
 	}
@@ -120,6 +123,8 @@ func workers() context.CancelFunc {
 	return cancel
 }
 
+// keeper receives the cluster metadata from the watcher
+// keeper sends the data to the http handler on request
 func keeper(ctx context.Context, in chan []byte, req chan chan []byte) {
 	data := []byte{}
 	for {
@@ -173,7 +178,7 @@ func main() {
 	// Initialize everything
 	parseFlags()
 	initEtcd()
-	log.Printf("Starting.")
+	log.Printf("Starting with hostname %q.", hostname)
 
 	// Start up our worker routines
 	cancel := workers()
