@@ -13,13 +13,14 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func randomKey() map[string]string {
+func randomKey() interface{} {
 	i := rand.Int() % 1000
-	log.Printf("generated random key %d\n", i)
+	debugf("generated random key %d\n", i)
 	return map[string]string{"key": strconv.Itoa(i)}
 }
 
-func datasource(ctx context.Context, name string, out chan map[string]string, interval time.Duration, f func() map[string]string) {
+func datasource(ctx context.Context, name string, out chan Datum, interval time.Duration, f func() interface{}) {
+	log.Printf("Datasource %q started with interval %v\n", name, interval)
 	ticker := time.NewTicker(interval)
 
 	for {
@@ -29,11 +30,12 @@ func datasource(ctx context.Context, name string, out chan map[string]string, in
 			return
 		case <-ticker.C:
 			debugf("datasource %q ticker ticked\n", name)
-			out <- f()
+			debugf("datasource %q sending data\n", name)
+			out <- Datum{key: name, value: f()}
 		}
 	}
 }
 
-func datasources(ctx context.Context, out chan map[string]string) {
+func datasources(ctx context.Context, out chan Datum) {
 	go datasource(ctx, "random", out, 3*time.Second, randomKey)
 }

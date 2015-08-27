@@ -19,13 +19,20 @@ import (
 	"gopkg.in/tylerb/graceful.v1"
 )
 
-func write(data map[string]string) {
-	meta["updated"] = time.Now().UTC().Format(time.RFC3339Nano)
-	j, _ := json.Marshal(map[string]interface{}{"meta": meta, "values": data})
-	writeEtcd(string(j))
+type Datum struct {
+	key   string
+	value interface{}
 }
 
-func writer(ctx context.Context, in chan map[string]string) {
+func write(data interface{}) {
+	meta["updated"] = time.Now().UTC().Format(time.RFC3339Nano)
+	if j, err := json.Marshal(map[string]interface{}{"meta": meta, "values": data}); err != nil {
+		writeEtcd(string(j))
+	}
+}
+
+// writer receives data and writes it
+func writer(ctx context.Context, in chan interface{}) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -33,13 +40,16 @@ func writer(ctx context.Context, in chan map[string]string) {
 			return
 		case data := <-in:
 			debugf("writer received %v\n", data)
+			debugf("writer writing\n")
 			write(data)
 		}
 	}
 }
 
-func scheduler(ctx context.Context, in, out chan map[string]string) {
-	data := make(map[string]string)
+// scheduler receives data, sends it, and holds onto it
+// scheduler sends held data to the writer on an interval
+func scheduler(ctx context.Context, in, out chan interface{}) {
+	var data interface{}
 	ticker := time.NewTicker(interval)
 
 	for {
@@ -50,26 +60,28 @@ func scheduler(ctx context.Context, in, out chan map[string]string) {
 			return
 		case <-ticker.C:
 			debugf("scheduler ticker ticked\n")
+			debugf("scheduler sending data\n")
 			out <- data
 		case data = <-in:
 			debugf("scheduler received data: %v\n", data)
+			debugf("scheduler sending data\n")
+			out <- data
 		}
 	}
 }
 
-func merger(ctx context.Context, in, out chan map[string]string) {
-	data := make(map[string]string)
+// aggregator aggregates data sources into a map and sends to the scheduler
+func aggregator(ctx context.Context, in chan Datum, out chan interface{}) {
+	data := make(map[string]interface{})
 
 	for {
 		select {
 		case <-ctx.Done():
-			debugf("merger cancelled\n")
+			debugf("aggregator cancelled\n")
 			return
-		case newdata := <-in:
-			debugf("merger received %v\n", newdata)
-			for k := range newdata {
-				data[k] = newdata[k]
-			}
+		case d := <-in:
+			debugf("aggregator received %v\n", d.key)
+			data[d.key] = d.value
 			out <- data
 		}
 	}
@@ -77,9 +89,9 @@ func merger(ctx context.Context, in, out chan map[string]string) {
 
 func workers() context.CancelFunc {
 	var (
-		writerChan    = make(chan map[string]string)
-		schedulerChan = make(chan map[string]string)
-		mergeChan     = make(chan map[string]string)
+		writerChan     = make(chan interface{})
+		schedulerChan  = make(chan interface{})
+		aggregatorChan = make(chan Datum)
 
 		keeperReqChan    = make(chan chan []byte)
 		keeperSubmitChan = make(chan []byte)
@@ -91,8 +103,8 @@ func workers() context.CancelFunc {
 	// Data collection pipeline
 	go writer(ctx, writerChan)
 	go scheduler(ctx, schedulerChan, writerChan)
-	go merger(ctx, mergeChan, schedulerChan)
-	go datasources(ctx, mergeChan)
+	go aggregator(ctx, aggregatorChan, schedulerChan)
+	go datasources(ctx, aggregatorChan)
 
 	// Data server pipeline
 	go keeper(ctx, keeperSubmitChan, keeperReqChan)
