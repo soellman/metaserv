@@ -26,7 +26,7 @@ type Datum struct {
 
 func write(data interface{}) {
 	meta["updated"] = time.Now().UTC().Format(time.RFC3339Nano)
-	if j, err := json.Marshal(map[string]interface{}{"meta": meta, "values": data}); err == nil {
+	if j, err := json.Marshal(map[string]interface{}{"meta": meta, "data": data}); err == nil {
 		writeEtcd(string(j))
 	} else {
 		log.Printf("ERROR: json marshalling failed: %v", err)
