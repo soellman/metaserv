@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/net/context"
@@ -21,6 +22,9 @@ type DataSource interface {
 var sources = []DataSource{
 	OSRelease{},
 	Docker{},
+	Etcd{},
+	Fleet{},
+	Uname{},
 }
 
 func datasources(ctx context.Context, out chan Datum) {
@@ -49,12 +53,12 @@ func dsTicker(ctx context.Context, out chan Datum, interval time.Duration, ds Da
 
 // dsExec runs a DataSource once
 func dsExec(out chan Datum, ds DataSource) {
-	log.Printf("Datasource %q executing", ds.Name())
 	data := ds.Generate()
 	if data == nil {
 		log.Printf("Datasource %q failed\n", ds.Name())
 		return
 	}
+	log.Printf("Datasource %q executed successfully\n", ds.Name())
 	debugf("datasource %q sending data\n", ds.Name())
 	out <- Datum{key: ds.Name(), value: ds.Generate()}
 }
@@ -114,5 +118,75 @@ func (d Docker) Generate() interface{} {
 	r := bytes.NewBuffer(out)
 	m := make(map[string]string)
 	ComposeReader(r, m, SplitOnString(": "), TupleToMap())
+	return m
+}
+
+// etcd. Reads `etcdctl --version`
+type Etcd struct{}
+
+func (e Etcd) Name() string { return "etcd" }
+
+func (e Etcd) Start(ctx context.Context, out chan Datum) {
+	go dsExec(out, e)
+}
+
+func (e Etcd) Generate() interface{} {
+	out, err := exec.Command("etcdctl", "--version").Output()
+	if err != nil {
+		log.Printf("`etcdctl --version` returned error.")
+		return nil
+	}
+	r := bytes.NewBuffer(out)
+	m := make(map[string]string)
+	ComposeReader(r, m, MatchAndRemove("etcdctl version "), MapKey("version"))
+	return m
+}
+
+// fleet. Reads `fleetctl --version`
+type Fleet struct{}
+
+func (f Fleet) Name() string { return "fleet" }
+
+func (f Fleet) Start(ctx context.Context, out chan Datum) {
+	go dsExec(out, f)
+}
+
+func (f Fleet) Generate() interface{} {
+	out, err := exec.Command("fleetctl", "--version").Output()
+	if err != nil {
+		log.Printf("`fleetdctl --version` returned error.")
+		return nil
+	}
+	r := bytes.NewBuffer(out)
+	m := make(map[string]string)
+	ComposeReader(r, m, MatchAndRemove("fleetctl version "), MapKey("version"))
+	return m
+}
+
+// uname. Reads data from `uname`
+type Uname struct{}
+
+func (u Uname) Name() string { return "uname" }
+
+func (u Uname) Start(ctx context.Context, out chan Datum) {
+	go dsExec(out, u)
+}
+
+func (u Uname) Generate() interface{} {
+	cmds := []struct {
+		key  string
+		flag string
+	}{
+		{"hostname", "-n"},
+		{"arch", "-m"},
+		{"kernel_name", "-s"},
+		{"kernel_release", "-r"},
+	}
+
+	m := make(map[string]string)
+	for _, cmd := range cmds {
+		out, _ := exec.Command("uname", cmd.flag).Output()
+		m[cmd.key] = strings.TrimSpace(string(out))
+	}
 	return m
 }

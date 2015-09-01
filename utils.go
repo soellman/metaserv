@@ -41,10 +41,28 @@ func SplitOnString(sep string) LineFunc {
 	}
 }
 
+// MatchAndRemove matches string and returns all but the string
+func MatchAndRemove(key string) LineFunc {
+	return func(line string) interface{} {
+		if !strings.Contains(line, key) {
+			return nil
+		}
+		return strings.Replace(strings.TrimSpace(line), key, "", 1)
+	}
+}
+
 func TupleToMap() AggFunc {
 	return func(data interface{}, lineData interface{}) {
 		line := lineData.([]string)
 		m := data.(map[string]string)
 		m[line[0]] = line[1]
+	}
+}
+
+func MapKey(key string) AggFunc {
+	return func(data interface{}, lineData interface{}) {
+		line := lineData.(string)
+		m := data.(map[string]string)
+		m[key] = line
 	}
 }
