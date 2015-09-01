@@ -22,6 +22,8 @@ var lineFuncTests = []struct {
 	{SplitOnString("="), testTupleBroken, nil},
 	{SplitOnString("="), testTupleEquals, []string{"one", "two"}},
 	{SplitOnString(":"), testTupleColon, []string{"one", "two"}},
+	{MatchAndRemove(":"), testTupleColon, "onetwo"},
+	{MatchAndRemove(":"), testTupleEquals, nil},
 }
 
 func TestLineFuncs(t *testing.T) {
