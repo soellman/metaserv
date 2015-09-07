@@ -12,5 +12,10 @@ Each node discovers its own metadata and publishes that metadata to etcd every s
 ## Contributing
 Contributions are welcome!
 
-## Surprise!
-Right now, it doesn't actually discover any metadata, unless you like random numbers. The rest of it works though.
+## Datasources
+`metaserv` collects data from the following:
+ - `/etc/os-release`
+ - `docker info`
+ - `etcdctl version`
+ - `fleetctl version`
+ - `uname` (a few flags)
